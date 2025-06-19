@@ -1,0 +1,5 @@
+dependencies:
+  - pip:
+      - msgraph-sdk==1.34.0
+      - azure-identity==1.23.0
+      - semantic-link-labs==0.10.1

@@ -20,14 +20,15 @@
 # The objective of this notebook is to check all connections that exist and validate there are no user mapping issues between them (ie duplicate connections)
 # 
 # The notebook is expected to be run by an admin or a principal with full access to all connections created
+# 
+# Note: Currently this needs to be split into two separate notebooks because semantic-link-labs is coupled to azure-identity azure-identity==1.7.1 and msgraph is coupled to azure-identity==1.23.0
 
 # CELL ********************
 
 from sempy_labs import _connections as conn
 import pandas as pd
-from msgraph import GraphServiceClient
-from azure.identity import DefaultAzureCredential, ClientSecretCredential
 import asyncio
+from azure.identity import ClientSecretCredential
 
 # METADATA ********************
 
@@ -38,26 +39,37 @@ import asyncio
 
 # CELL ********************
 
-kv_uri = 'https://kvfabricprodeus2rh.vault.azure.net/'
-client_id_secret = 'fuam-spn-client-id'
-tenant_id_secret = 'fuam-spn-tenant-id'
-client_secret_name = 'fuam-spn-secret'
+%pip show azure-identity
 
-# Replace with your Azure AD app details
-tenant_id = notebookutils.credentials.getSecret(kv_uri, tenant_id_secret)
-client_id = notebookutils.credentials.getSecret(kv_uri, client_id_secret)
-client_secret = notebookutils.credentials.getSecret(kv_uri, client_secret_name)
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# kv_uri = 'https://kvfabricprodeus2rh.vault.azure.net/'
+# client_id_secret = 'fuam-spn-client-id'
+# tenant_id_secret = 'fuam-spn-tenant-id'
+# client_secret_name = 'fuam-spn-secret'
+
+# # Replace with your Azure AD app details
+# tenant_id = notebookutils.credentials.getSecret(kv_uri, tenant_id_secret)
+# client_id = notebookutils.credentials.getSecret(kv_uri, client_id_secret)
+# client_secret = notebookutils.credentials.getSecret(kv_uri, client_secret_name)
 
 
-# Authenticate using ClientSecretCredential
-credential = ClientSecretCredential(
-    tenant_id=tenant_id,
-    client_id=client_id,
-    client_secret=client_secret
-)
+# # Authenticate using ClientSecretCredential
+# credential = ClientSecretCredential(
+#     tenant_id=tenant_id,
+#     client_id=client_id,
+#     client_secret=client_secret
+# )
 
-# Create Graph client
-client = GraphServiceClient(credential)
+# # Create Graph client
+# client = GraphServiceClient(credential)
 
 # METADATA ********************
 
@@ -169,6 +181,100 @@ merged_df
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# # Convert to PySpark DataFrame and Write to Lakehouse Table
+
+# CELL ********************
+
+spark_merged_df = spark.createDataFrame(merged_df)
+
+display(spark_merged_df)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+def mount_lakehouse(source_path:str, mount_path:str):
+    """
+    Mount a storage path to access as if storage is local
+    source_path: abfss path
+    mount_path: temporary directory where the data is stored
+    """
+    try:
+        mssparkutils.fs.mount(source=source_path, mountPoint=mount_path)
+        print("Mount successful")
+    except Exception as e:
+        print(f"Mount failed: {e}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# mount the lakehouse
+lh_path = 'abfss://cicd_ws@onelake.dfs.fabric.microsoft.com/connections_lh.Lakehouse/Tables'
+mount_path = '/mnt/connections_lh'
+
+mount_lakehouse(lh_path, mount_path)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# refactor columns
+spark_merged_df.columns
+
+column_mapping = {
+    'Connection Id': 'connection_id',
+    'Connection Name': 'connection_name',
+    'Gateway Id': 'gateway_id',
+    'Connectivity Type': 'connectivity_type',
+    'Connection Path': 'connection_path',
+    'Connection Type': 'connection_type',
+    'Privacy Level': 'privacy_level',
+    'Credential Type': 'credential_type',
+    'Single Sign On Type': 'single_sign_on_type',
+    'Connection Encryption': 'connection_encryption',
+    'Skip Test Connection': 'skip_test_connection',
+    'Connection Role Assignment Id': 'connection_role_assignment_id',
+    'Principal Id': 'principal_id',
+    'Principal Type': 'principal_type',
+    'Role': 'role'
+}
+
+
+# Rename columns
+for old_name, new_name in column_mapping.items():
+    spark_merged_df = spark_merged_df.withColumnRenamed(old_name, new_name)
+
+# Write to Delta table
+lakehouse_path = 'abfss://cicd_ws@onelake.dfs.fabric.microsoft.com/connections_lh.Lakehouse/Tables'
+spark_merged_df.write.format('delta').mode('overwrite').save(f'{lakehouse_path}/connections_test')
+
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # CELL ********************
 
 # get a list of all the principal Ids 
@@ -195,68 +301,6 @@ unique_list = list(dict.fromkeys(principal_id_list))
 # CELL ********************
 
 unique_list
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
-async def get_user():
-    user = await client.users.by_user_id('c65f2c4b-7fe6-4274-b8c9-2bcfbb6d784b').get()
-    if user:
-        print(f"User Display Name: {user.display_name}")
-    else:
-        print("User not found.")
-
-
-
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
-try:
-    loop = asyncio.get_running_loop()
-except RuntimeError:
-    loop = None
-
-if loop and loop.is_running():
-    # If there's a running loop, use `create_task`
-    task = loop.create_task(get_user())
-else:
-    # Otherwise, run normally
-    asyncio.run(get_user())
-
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
-await get_user()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
 
 # METADATA ********************
 

@@ -76,7 +76,6 @@ dp.list_deployment_pipelines()
 
 # CELL ********************
 
-dp.list_deployment_pipeline_stages('devops-example-deployment-pipelines')
 
 # METADATA ********************
 
@@ -199,7 +198,7 @@ def assign_workspace_to_stage(deployment_pipeline_id:str, stage_id:str, workspac
         "workspaceId": "4de5bcc4-2c88-4efe-b827-4ee7b289b496"
     }
     """
-    url = f'POST https://api.fabric.microsoft.com/v1/deploymentPipelines/{deployment_pipeline_id}/stages/{stage_id}/assignWorkspace'
+    url = f'https://api.fabric.microsoft.com/v1/deploymentPipelines/{deployment_pipeline_id}/stages/{stage_id}/assignWorkspace'
 
     headers = {
     "Authorization": f"Bearer {api_token}",
@@ -209,6 +208,10 @@ def assign_workspace_to_stage(deployment_pipeline_id:str, stage_id:str, workspac
     json_payload = {
         "workspaceId": f"{workspace_id}"
     }
+
+    print(f'Printing URL: {url}')
+    print(f'Printing Headers: {headers}')
+    print(f'Printing Payload: {json_payload}')
 
     response = requests.post(url, headers=headers, json=json_payload)
 
@@ -265,8 +268,9 @@ def validate_group_role_assignment_schema(data):
         return False, "'role' must be a string"
     
     # Validate role (add more valid roles if needed)
-    valid_roles = ["Admin", "User", "Reader"]
+    valid_roles = ["Admin"]
     if data["role"] not in valid_roles:
+        print('Currently only Admin Role is supported: https://learn.microsoft.com/en-us/rest/api/fabric/core/deployment-pipelines/add-deployment-pipeline-role-assignment?tabs=HTTP#deploymentpipelinerole')
         return False, f"'role' must be one of: {', '.join(valid_roles)}"
     
     # All checks passed
@@ -354,31 +358,123 @@ def validate_deployment_pipeline_schema(data):
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# # Create New Deployment Pipeline
+
 # CELL ********************
 
-json_example = {
-  "displayName": "Deployment Pipeline Test",
-  "description": "My deployment pipeline description",
+deployment_pipeline_payload = {
+  "displayName": "Reporting Deployment Pipeline Test 2",
+  "description": "Reporting Pipeline",
   "stages": [
     {
-      "displayName": "Development",
-      "description": "Development stage description",
-      "isPublic": True
-    },
-    {
-      "displayName": "Test",
-      "description": "Test stage description",
+      "displayName": "Dev",
+      "description": "Dev Stage of Reporting",
       "isPublic": False
     },
     {
-      "displayName": "Production",
-      "description": "Production stage description",
+      "displayName": "Test",
+      "description": "Test stage of Reporting",
+      "isPublic": False
+    },
+    {
+      "displayName": "Prod",
+      "description": "Prod stage of Reporting",
       "isPublic": True
     }
   ]
 }
 
 
+token = get_api_token_via_akv(kv_uri, client_id_secret, tenant_id_secret, client_secret_name)
+
+response = create_deployment_pipeline(deployment_pipeline_payload, token)
+
+# get the response payload to get the ID 
+data = response.json()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# # Add AAD Group to Deployment Pipeline
+
+# CELL ********************
+
+data['id']
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+data
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+deployment_pipeline_users_object_id = '716edf93-9516-4977-a99a-d4a54c648c74'
+
+add_user_payload = {
+  "principal": {
+    "id": f"{deployment_pipeline_users_object_id}",
+    "type": "Group"
+  },
+  "role": "Admin"
+}
+
+add_response = add_group_to_deployment_pipeline(data['id'], add_user_payload, token)
+
+add_response
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+add_response.json()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+data['stages'][0]['id']
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+dp.list_deployment_pipeline_stages('Reporting Deployment Pipeline Test 2')
 
 # METADATA ********************
 
@@ -391,7 +487,33 @@ json_example = {
 
 token = get_api_token_via_akv(kv_uri, client_id_secret, tenant_id_secret, client_secret_name)
 
-response = create_deployment_pipeline(json_example, token)
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# Assign Workspaces to Stages (Presentation Workspaces)
+
+dev_workspace_id = '427da32f-01bf-4b8e-9ad4-425ff24d90d4'
+test_workspace_id = '070a9f84-3478-41c8-add4-5aa94ef97507'
+prod_workspace_id = 'aafc2126-4d46-4cb0-a85c-004fdb9acf59'
+
+dev_stage_id = data['stages'][0]['id']
+test_stage_id = data['stages'][1]['id']
+prod_stage_id = data['stages'][2]['id']
+
+# set dev
+set_dev_resp = assign_workspace_to_stage(data['id'], dev_stage_id, dev_workspace_id, token)
+
+# set test
+set_test_resp = assign_workspace_to_stage(data['id'], test_stage_id, test_workspace_id, token)
+
+# set prod
+set_prod_resp = assign_workspace_to_stage(data['id'], prod_stage_id, prod_workspace_id, token)
 
 # METADATA ********************
 
@@ -402,7 +524,7 @@ response = create_deployment_pipeline(json_example, token)
 
 # CELL ********************
 
-response.json()
+set_dev_resp.json()
 
 # METADATA ********************
 
@@ -413,21 +535,7 @@ response.json()
 
 # CELL ********************
 
-# Add AD Group to Deployment Pipeline
-principal_id = 'c65f2c4b-7fe6-4274-b8c9-2bcfbb6d784b'
-
-add_user_payload = add_user_payload = {
-  "principal": {
-    "id": "c65f2c4b-7fe6-4274-b8c9-2bcfbb6d784b",
-    "type": "User"
-  },
-  "role": "Admin"
-}
-
-
-group_add_response = deployment_pipeline_id = '36dbc745-0ba4-44d3-9036-0bbddc6733a8'
-add_group_to_deployment_pipeline(deployment_pipeline_id, add_user_payload, token)
-
+set_test_resp.json()
 
 # METADATA ********************
 
@@ -438,7 +546,7 @@ add_group_to_deployment_pipeline(deployment_pipeline_id, add_user_payload, token
 
 # CELL ********************
 
-group_add_response
+set_prod_resp.json()
 
 # METADATA ********************
 
